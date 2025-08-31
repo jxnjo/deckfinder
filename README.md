@@ -1,8 +1,8 @@
-# deckfinder
+# Deckfinder für ClashRoyale
 
 OCR-basierter Scanner, der auf deinem Bildschirm den **Gegner-Namen** und **Clan-Namen** (im „VS“-Screen) erkennt und über die **offizielle Clash Royale API** das **aktuelle Deck** des Spielers abruft.
 
-> ⚠️ Hinweis: Das offizielle API liefert keine Live-Gegner direkt. Wir erkennen Namen/Clan am Bildschirm (OCR) und holen damit das „Current Deck“ des Spielers. Bitte beachte die Spiel-ToS/Turnierregeln.
+> ⚠️ Hinweis: Das offizielle API liefert keine Live-Gegner direkt. Wir erkennen Namen/Clan am Bildschirm (OCR) und holen damit das „Current Deck“ des Spielers.
 
 ---
 
