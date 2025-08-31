@@ -1,174 +1,211 @@
-# Deckfinder für ClashRoyale
+# DeckFinder — Clash Royale Gegner-Deck per Bildschirm-OCR erkennen
 
-OCR-basierter Scanner, der auf deinem Bildschirm den **Gegner-Namen** und **Clan-Namen** (im „VS“-Screen) erkennt und über die **offizielle Clash Royale API** das **aktuelle Deck** des Spielers abruft.
+DeckFinder liest **Spielername** und **Clanname** live von deinem Bildschirm (OCR) und ruft über die **Clash Royale API** das **aktuelle Deck** des Spielers ab. Zusätzlich zeigt es die **letzten 10** 1v1 **Ladder/Ranked** (Trophy Road / Path of Legends) Decks – **ohne** Friendlies, Clanwar, Draft/Megadraft – mit **Übereinstimmungs‑Quote** zum aktuellen Deck. Eine kleine GUI bietet **Start/Stop**, **Kalibrierung**, **Ladebalken** und **manuelle Suche**.
 
-> ⚠️ Hinweis: Das offizielle API liefert keine Live-Gegner direkt. Wir erkennen Namen/Clan am Bildschirm (OCR) und holen damit das „Current Deck“ des Spielers.
+> Hinweis: Dieses Tool ist ein inoffizielles Hilfs‑UI. Halte dich an die AGB des Spiels und nutze es verantwortungsvoll.
+
+---
+
+## Inhalt
+- [Features](#features)
+- [Systemvoraussetzungen](#systemvoraussetzungen)
+- [Installation](#installation)
+- [Konfiguration (.env)](#konfiguration-env)
+- [Kalibrierung (ROIs festlegen)](#kalibrierung-rois-festlegen)
+- [Starten & Nutzung](#starten--nutzung)
+- [Filterlogik: Nur 1v1 Ranked/Trophy](#filterlogik-nur-1v1-rankedtrophy)
+- [Tipps zur OCR-Qualität](#tipps-zur-ocr-qualität)
+- [Troubleshooting](#troubleshooting)
+- [Projektstruktur](#projektstruktur)
+- [Roadmap / Ideen](#roadmap--ideen)
+- [Lizenz](#lizenz)
 
 ---
 
 ## Features
 
-- Bildschirmaufnahme (macOS/Windows/Linux) via `mss`
-- OCR für Gegner- und Clan-Namen mit `pytesseract` + `opencv`
-- Clan per Name suchen → Spieler im Clan matchen → Player-Endpoint → **aktuelles Deck**
-- Stabilitätslogik: nur auslösen, wenn OCR 1–n Frames hintereinander gleich ist
-- Debug-Fenster mit Live-ROI-Vorschau (optional)
+- 🔍 **OCR-Scan** (Name/Clan) aus frei kalibrierbaren Bildschirmbereichen
+- 🃏 **Aktuelles Deck** als Kartenbilder + Namen
+- 🧠 **History**: letzte **10** validierte 1v1 Ladder/Ranked-Decks (Mini-PNGs)
+- 📊 **Match-Score**: Übereinstimmungsquote zwischen aktuellem und Historien-Deck
+- ⏳ **Loading-Bar** für API-Requests
+- ⌨️ **Manuelle Suche** (Spielername + Clanname), falls OCR nicht greift
+- 🖥️ **Windows & macOS** unterstützt
 
 ---
 
-## Voraussetzungen
+## Systemvoraussetzungen
 
-- **Python 3.10+**
+- **Python** 3.11 oder 3.12
 - **Tesseract OCR**
-  - macOS: `brew install tesseract`
-  - Ubuntu/Debian: `sudo apt-get install tesseract-ocr`
-  - Windows: Installer von <https://github.com/UB-Mannheim/tesseract/wiki>
-- **Clash Royale API Token** (Developer-Key mit freigeschalteter IP)
+  - **Windows:** Installer (UB Mannheim) – Standardpfad `C:\Program Files\Tesseract-OCR\tesseract.exe`
+  - **macOS (Homebrew):** `brew install tesseract`
+- Abhängigkeiten aus `requirements.txt` (u. a. `opencv-python`, `mss`, `pytesseract`, `httpx`, `Pillow`, `python-dotenv`, `tkinter` (ist bei Python für Windows/macOS enthalten))
 
 ---
 
 ## Installation
 
 ```bash
-# 1) Projekt klonen / in Ordner wechseln
+# 1) Projekt klonen
+git clone https://github.com/<DEIN-USER>/deckfinder.git
 cd deckfinder
 
-# 2) Virtuelle Umgebung & Dependencies
+# 2) Virtuelle Umgebung (empfohlen)
 python -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
+
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
+
+# 3) Abhängigkeiten installieren
 pip install -r requirements.txt
-
-# 3) .env anlegen
-cp .env.example .env                 # CLASH_TOKEN in .env eintragen
 ```
+
+### Tesseract installieren
+
+- **Windows:** Lade den Installer herunter (z. B. von UB Mannheim), installiere nach `C:\Program Files\Tesseract-OCR\`.  
+- **macOS:**  
+  ```bash
+  brew install tesseract
+  ```
 
 ---
 
-## Konfiguration
+## Konfiguration (.env)
 
-`.env` (geheim, nicht committen):
-```dotenv
-CLASH_TOKEN=YOUR_CLASH_API_TOKEN
+Erstelle eine Datei **`.env`** im Projekt‑Root:
+
+```ini
+CLASH_TOKEN=dein_clash_royale_api_token
+
+# Optional: Wenn Tesseract nicht automatisch gefunden wird
+# TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 ```
 
-**Bildschirmrechte (macOS):**  
-Systemeinstellungen → Datenschutz & Sicherheit → **Bildschirmaufnahme** → Terminal/IDE anhaken.
+> Deinen API‑Token erhältst du im **Clash Royale Developer Portal**.  
+> `.env` steht in `.gitignore` – **nicht committen!**
 
 ---
 
-## Nutzung
+## Kalibrierung (ROIs festlegen)
 
-### 1) ROI kalibrieren
-Zuerst die Bereiche (ROIs) für **Gegnername** und **Clanname** einmalig markieren.
+Starte den Kalibrier‑Assistenten, um die Regionen für **Spielername** und **Clanname** festzulegen (und optional eine **Capture‑Region**):
 
 ```bash
 python calibrate_roi.py
 ```
 
-- Es öffnet sich ein Fenster → Bereich für **Gegner-Name** ziehen → **Enter**
-- Danach Bereich für **Clan-Name** → **Enter**
-- Speichert `config.json` mit den Koordinaten
+- **Capture‑Region** (optional) ziehen → ENTER (ohne Auswahl: ganzer Screen).  
+- **ROI Spielername** ziehen → ENTER.  
+- **ROI Clanname** ziehen → ENTER.
 
-### 2) Live-Scan starten
-```bash
-python scan.py --monitor 0 --debug --show
+Es entsteht eine `config.json`, z. B.:
+
+```json
+{
+  "roi_name": [952, 126, 120, 40],
+  "roi_clan": [952, 170, 140, 32],
+  "capture_region": [900, 100, 300, 200]
+}
 ```
 
-- `--show`: Fenster mit Bildschirm & markierten ROIs + OCR-Crops
-- `--debug`: zeigt pro Frame erkannte Texte + Confidence
-- Sobald Name & Clan stabil erkannt wurden, wird das Deck im Terminal ausgegeben
-
-Beispiel ohne Debug/GUI (wenn alles passt):
-```bash
-python scan.py --monitor 0 --conf-min 40 --stable 2
-```
+> Tipp: Ziehe die Boxen **eng** um den Text, ohne Icons/Glows.
 
 ---
 
-## CLI-Optionen (scan.py)
+## Starten & Nutzung
 
-| Option            | Typ    | Default | Beschreibung                                                                 |
-|-------------------|--------|---------|------------------------------------------------------------------------------|
-| `--monitor`       | int    | `0`     | `mss`-Monitorindex: `0`=alle, `1`=Hauptmonitor, `2…` weitere Monitore        |
-| `--conf-min`      | float  | `35.0`  | Mindest-Confidence je OCR-Zeile (Name/Clan), sonst wird verworfen            |
-| `--stable`        | int    | `1`     | Anzahl identischer Frames in Folge, bevor der Lookup ausgelöst wird          |
-| `--interval`      | float  | `0.4`   | Sekunden zwischen Scans                                                      |
-| `--debug`         | flag   | —       | Verbose OCR-Ausgabe im Terminal                                              |
-| `--show`          | flag   | —       | Zeigt Fenster mit Screen/ROI/Crops (zum Justieren der Bereiche)             |
+```bash
+python ui.py
+```
 
-> Tipp: Wenn nichts passiert, teste erstmal **locker**:  
-> `python scan.py --monitor 0 --conf-min 30 --stable 1 --debug --show`
+**UI‑Elemente:**
+- **Scan starten/stoppen**: OCR‑Loop an/aus
+- **Kalibrieren…**: Assistent erneut starten
+- **Spieler/Clan + Deck suchen**: Manuelle Suche (ENTER in Feldern möglich)
+- **Anzeige**:
+  - aktuelles Deck (8 große Icons + Namen)
+  - **Letzte 10 Decks** (nur 1v1 Ladder/Ranked) mit Mini‑Icons & **Fortschrittsbalken** (Match‑%)
+  - Status/Log‑Ausgabe unten
 
 ---
 
-## Ordnerstruktur
+## Filterlogik: Nur 1v1 Ranked/Trophy
 
-```
-deckfinder/
-├─ cr_api.py              # Clash Royale API Client + Resolver + Deck-Formatter
-├─ calibrate_roi.py       # ROI-Kalibrierung (Name/Clan ziehen, config.json speichern)
-├─ scan.py                # Live-Scanner (OCR -> Clan/Player -> Deck)
-├─ requirements.txt
-├─ .env.example
-└─ README.md
-# wird erzeugt:
-└─ config.json            # ROIs aus der Kalibrierung
-```
+Die Historie filtert so, dass nur echte 1v1‑Ladder/Ranked‑Kämpfe einfließen:
+
+- `type == "PvP"`
+- genau **1 vs 1**
+- **kein** Draft/Megadraft, **keine** Friendlies/Challenges/Clanwar
+- Whitelist über GameMode‑Namen: enthält eines von  
+  `ranked`, `path of legends`, `ladder`, `trophy road`, `league`
+
+Dadurch bleiben Testspiele/Clanwars/Megadraft zuverlässig außen vor.
+
+---
+
+## Tipps zur OCR‑Qualität
+
+- **ROIs enger ziehen** (nur Text)
+- Spielgrafik: **hohe Auflösung**, klare Schrift, ggf. Gamma/Helligkeit erhöhen
+- **Name**: Kontrastreiche Darstellung (goldene Schrift → gut sichtbar)
+- In `ui.py` kann die Schwelle `conf_min` (Standard ≈ 35) angepasst werden
 
 ---
 
 ## Troubleshooting
 
-- **Es passiert nichts / keine Ausgabe**
-  - Rechte für Bildschirmaufnahme setzen (macOS)
-  - `--monitor 0` probieren (gesamter Desktop)
-  - ROIs neu kalibrieren (`python calibrate_roi.py`)
-  - `--conf-min 30` und `--stable 1` zum Testen
-- **„No closing quotation“ (Tesseract)**
-  - Du nutzt die aktuelle `ocr_line`-Funktion mit korrekt gequoteter Whitelist (im Repo enthalten)
-- **Schwarzer Frame**
-  - Terminal/IDE bei Bildschirmaufnahme freigeben; ggf. anderen Monitorindex
-- **Clan/Spieler nicht gefunden**
-  - Schreibweise prüfen; Clan-Suche liefert mehrere Treffer – wir wählen den mit meisten Mitgliedern  
-    (kannst du in `cr_api.resolve_clan_tag_by_name` anpassen)
+### „Tesseract nicht gefunden“
+- Windows: Prüfe `C:\Program Files\Tesseract-OCR\tesseract.exe` und setze ggf. in `.env`:
+  ```ini
+  TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+  ```
+- macOS: `brew install tesseract` und sicherstellen, dass `tesseract` im `PATH` liegt.
+
+### „Battlelog konnte nicht geladen werden“
+- Token korrekt? Rate‑Limit? Internet verfügbar? Nochmals versuchen.
+
+### OCR erkennt „Oo“ / „Be“ statt Name/Clan
+- ROIs enger ziehen.
+- In‑Game‑UI größer stellen, Anti‑Aliasing reduzieren.
+- Beleuchtung/Monitor‑Helligkeit prüfen.
+
+### Keine Historie zu sehen
+- Der Spieler hat evtl. nur Friendlies/Clanwar/Draft in den letzten Kämpfen.  
+  Die Filterlogik blendet diese **absichtlich** aus.
 
 ---
 
-## Sicherheit & Datenschutz
+## Projektstruktur
 
-- **Leake keinen API-Token.** `.env` ist in `.gitignore` – nutze `.env.example` für Platzhalter.
-- Bildschirmdaten werden **nicht** gespeichert – nur live ausgewertet (außer du baust Logging ein).
+```
+deckfinder/
+├─ ui.py              # GUI + OCR + Anzeige (aktuelles Deck, Historie, Match-Score)
+├─ calibrate_roi.py   # Assistent zur Festlegung der ROIs (Name/Clan + optional Capture-Region)
+├─ cr_api.py          # Clash Royale API Wrapper + Helpers
+├─ config.json        # erzeugt durch Kalibrieren (nicht committen)
+├─ .env               # API-Token (nicht committen)
+└─ requirements.txt
+```
+
+---
+
+## Roadmap / Ideen
+
+- Spieler‑Panel mit Statistiken (Winrate, meistgespielte Karten, Trophäen‑Verlauf)
+- Export (PNG/CSV), Dark‑Mode, Hotkeys
+- Auto‑Update‑Hinweise im UI
 
 ---
 
 ## Lizenz
 
-MIT – siehe `LICENSE` (optional hinzufügen).
+MIT (siehe `LICENSE`). Dieses Projekt steht in keinem Zusammenhang mit Supercell.
 
 ---
 
-## Danksagung
+## Mitwirken
 
-- OCR: [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)  
-- Screen Capture: [`mss`](https://github.com/BoboTiG/python-mss)  
-- API: Offizielles **Clash Royale API** (Supercell)
-
----
-
-### Beispielausgabe
-
-```
-Erkannt: Gegner='Beispielname' | Clan='Testclan' (conf ~82)
-
-🃏 Aktuelles Deck von Beispielname #QP09P82R
-Clan: Drablibe
- 1. Hog Rider (Lvl 14)
- 2. Cannon (Lvl 14)
- 3. Ice Spirit (Lvl 14)
- 4. Fireball (Lvl 14)
- 5. The Log (Lvl 14)
- 6. Musketeer (Lvl 14)
- 7. Skeletons (Lvl 14)
- 8. Valkyrie (Lvl 14)
-------------------------------------------------------------
-```
+PRs/Issues sind willkommen. Bitte **keine sensiblen Daten** hochladen (`.env`, `config.json`, Token, private Screenshots).
