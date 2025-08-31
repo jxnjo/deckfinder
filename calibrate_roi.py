@@ -1,85 +1,70 @@
+# calibrate_roi.py – minimal: nur Spielername- und Clanname-ROI erfassen
+
 import json
 import os
+import sys
 import numpy as np
 import cv2
 import mss
 
 CONF_PATH = "config.json"
 
-def grab_screen():
-    # Prüfe config.json auf eine optionale capture_region: [left, top, width, height]
-    cfg = {}
-    if os.path.exists(CONF_PATH):
-        try:
-            with open(CONF_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-        except Exception:
-            cfg = {}
 
-    cap = cfg.get("capture_region")
+def grab_fullscreen() -> np.ndarray:
+    """Screenshot des gesamten virtuellen Desktops (alle Monitore)."""
     with mss.mss() as sct:
-        if cap:
-            left, top, width, height = map(int, cap)
-            monitor = {"left": left, "top": top, "width": width, "height": height}
-        else:
-            monitor = sct.monitors[1]  # primärer Monitor
-
-        img = np.array(sct.grab(monitor))[:, :, :3]  # BGRA -> BGR
+        mon = sct.monitors[0]  # [0] = full virtual screen
+        img = np.array(sct.grab(mon))[:, :, :3]  # BGRA -> BGR
         return img
 
+
+def pick_roi(window_title: str, base_img: np.ndarray, hint: str) -> tuple[int, int, int, int]:
+    """ROI mit Maus ziehen und ENTER drücken. Gibt (x,y,w,h) als int zurück."""
+    view = base_img.copy()
+    cv2.putText(
+        view, hint, (20, 40),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA
+    )
+    # Auswahlfenster
+    r = cv2.selectROI(window_title, view, showCrosshair=True, fromCenter=False)
+    cv2.destroyWindow(window_title)
+
+    x, y, w, h = map(int, r)
+    if w <= 0 or h <= 0:
+        print(f"❌ Keine Auswahl fuer '{window_title}' getroffen.", file=sys.stderr)
+        sys.exit(1)
+    return x, y, w, h
+
+
 def main():
-    img = grab_screen()
+    img = grab_fullscreen()
 
-    # Schritt 1: optional Capture-Region wählen
-    view = img.copy()
-    cv2.putText(view, "Ziehe optional eine Capture-Region. ENTER ohne Auswahl = ganzer Bildschirm",
-                (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
-    rcap = cv2.selectROI("Capture-Region (optional)", view, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow("Capture-Region (optional)")
+    # 1) Spielername-ROI
+    roi_name = pick_roi(
+        "ROI: Spielername",
+        img,
+        "Ziehe ein Rechteck NUR um den SPIELERNAMEN und druecke ENTER"
+    )
 
-    # Falls keine Auswahl (w oder h == 0), verwenden wir den ganzen Bildschirm
-    if int(rcap[2]) == 0 or int(rcap[3]) == 0:
-        left, top, width, height = 0, 0, img.shape[1], img.shape[0]
-        capture_region = None
-        print("Keine Capture-Region gewählt: ganzer Bildschirm wird verwendet.")
-    else:
-        left, top, width, height = map(int, rcap)
-        capture_region = [left, top, width, height]
-        print(f"Capture-Region gesetzt: left={left}, top={top}, w={width}, h={height}")
+    # 2) Clanname-ROI
+    roi_clan = pick_roi(
+        "ROI: Clanname",
+        img,
+        "Ziehe ein Rechteck NUR um den CLANNAMEN und druecke ENTER"
+    )
 
-    # Ausschnitt zum Kalibrieren (für die ROI-Auswahl anzeigen)
-    crop = img[top:top+height, left:left+width].copy()
+    cfg = {
+        "roi_name": [int(v) for v in roi_name],
+        "roi_clan": [int(v) for v in roi_clan],
+    }
 
-    # Schritt 2: ROI für Gegner-Namen wählen (relativ zur Capture-Region)
-    view = crop.copy()
-    cv2.putText(view, "Ziehe ROI fuer GEGNER-NAME und druecke ENTER",
-                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
-    r1 = cv2.selectROI("ROI: Gegner-Name", view, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow("ROI: Gegner-Name")
-
-    # Schritt 3: ROI für Clan-Namen wählen (relativ zur Capture-Region)
-    view = crop.copy()
-    cv2.putText(view, "Ziehe ROI fuer CLAN-NAME und druecke ENTER",
-                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
-    r2 = cv2.selectROI("ROI: Clan-Name", view, showCrosshair=True, fromCenter=False)
-    cv2.destroyAllWindows()
-
-    # Konvertiere die in der Auswahl relativen Koordinaten in absolute Bildschirm-Koordinaten
-    def abs_roi(rel, left, top):
-        x, y, w, h = map(int, rel)
-        return [int(x + left), int(y + top), int(w), int(h)]
-
-    roi_name_abs = abs_roi(r1, left, top)
-    roi_clan_abs = abs_roi(r2, left, top)
-
-    cfg = {"roi_name": roi_name_abs, "roi_clan": roi_clan_abs}
-    if capture_region is not None:
-        cfg["capture_region"] = capture_region
-
-    os.makedirs(os.path.dirname(CONF_PATH) or ".", exist_ok=True)
     with open(CONF_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    print("Gespeichert:", os.path.abspath(CONF_PATH), cfg)
+
+    print("✅ Gespeichert:", os.path.abspath(CONF_PATH))
+    print("   roi_name:", cfg["roi_name"])
+    print("   roi_clan:", cfg["roi_clan"])
+
 
 if __name__ == "__main__":
     main()
